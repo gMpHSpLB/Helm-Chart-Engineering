@@ -449,3 +449,11 @@ k8s-describe-high-memroy-usage-pod:
 .PHONY: k8s-delete-high-memory-usage-pod
 k8s-delete-high-memory-usage-pod:
 	kubectl delete pod oom-pod -n $(K8S_APP_NAMESPACE_DEV)
+
+
+.PHONY : full-teardown
+full-teardown: ## Clean Everything
+	@echo "Delete the namespace (this deletes everything inside it)""
+	kubectl delete namespace $(K8S_APP_NAMESPACE_DEV)
+	# Stop minikube
+	$(MAKE) -f Makefile_Setup stop-minikube

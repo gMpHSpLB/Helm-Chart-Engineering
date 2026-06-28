@@ -12,10 +12,18 @@ help: ## Show all available targets with short descriptions.
 	# Expected output: a list of targets and one-line descriptions.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
+# --------------------------- Applications -----------------
+APP_NAME 						?= myapp
+
 # ---------- APP NAMESPACES PER ENV ------------------------
 # These match manifests/myapp-dev.yaml
-# Namespace for dev myapp workloads
+# Namespace for dev $(APP_NAME) workloads
 K8S_APP_NAMESPACE_DEV           ?= myapp-dev
+
+# ---------- APP CONFIGMAPS PER NAMESPACES PER ENV ----------
+K8S_APP_CONFIGMAPS              ?= myapp-config
+# ---------- APP SECRETS PER NAMESPACES PER ENV ----------
+K8S_APP_SECRETS                 ?= myapp-secret
 
 # ------------------------------------------------------------------------------------------------------
 #
@@ -32,10 +40,10 @@ K8S_APP_NAMESPACE_DEV           ?= myapp-dev
 #    - Services use them to route traffic. Monitoring uses them to discover scrape targets.
 #
 # ------------------------------------------------------------------------------------------------------
-.PHONY : k8s_label_query_selector
-k8s_label_query_selector: ## List only pods that have app=myapp AND environment=dev labels.
-	echo "List only pods that have app=myapp AND environment=dev labels"
-	kubectl get pods -n myapp-dev -l "app=myapp,environment=dev"
+.PHONY : k8s-label-query-selector
+k8s-label-query-selector: ## List only pods that have app=myapp AND environment=dev labels.
+	echo "List only pods that have app=$(APP_NAME) AND environment=dev labels"
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l "app=$(APP_NAME),environment=dev"
 
 
 # ------------------------------------------------------------------------------------------------------
@@ -52,12 +60,12 @@ k8s_label_query_selector: ## List only pods that have app=myapp AND environment=
 #
 # Hint(use exec and --env) ->  kubectl exec $$RUNNING_POD -n myapp-dev -- env
 # ------------------------------------------------------------------------------------------------------
-.PHONY : k8s_verify_env_variables_injected
-k8s_verify_env_variables_injected: ## Confirm that APP_ENV from ConfigMap and DB_PASSWORD rom Secret are actually available inside the running container.
-	echo "Get the name of a running pod"
-	@RUNNING_POD=$$(kubectl get pods -n myapp-dev -l app=myapp -o jsonpath='{.items[0].metadata.name}'); \
+.PHONY : k8s-verify-env-variables-injected
+k8s-verify-env-variables-injected: ## Confirm that APP_ENV from ConfigMap and DB_PASSWORD rom Secret are actually available inside the running container.
+	@echo "Get the name of a running pod"
+	@RUNNING_POD=$$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=$(APP_NAME) -o jsonpath='{.items[0].metadata.name}'); \
 	echo "Check environment variables inside the container $$RUNNING_POD "; \
-	kubectl exec $$RUNNING_POD -n myapp-dev -- env | grep -E "APP_ENV|DB_PASSWORD|POD_NAME|NODE_NAME"
+	kubectl exec $$RUNNING_POD -n $(K8S_APP_NAMESPACE_DEV) -- env | grep -E "APP_ENV|DB_PASSWORD|POD_NAME|NODE_NAME"
 
 # ------------------------------------------------------------------------------------------------------
 # Exercise 3 — ConfigMap Volume Mount Verification
@@ -74,14 +82,167 @@ k8s_verify_env_variables_injected: ## Confirm that APP_ENV from ConfigMap and DB
 # 		level = info
 # 		format = json
 # 		...
+# Hint(use exec and -- ls -la and -- cat ) ->  
+#		kubectl exec $$RUNNING_POD -n myapp-dev -- ls -la /etc/myapp/
+# 		kubectl exec $$RUNNING_POD -n myapp-dev -- cat /etc/myapp/app.ini
 #
 # ------------------------------------------------------------------------------------------------------
-.PHONY : k8s_verify_configmap_valume_mounted
-k8s_verify_configmap_valume_mounted: ## Verify that app.ini from the ConfigMap is mounted as a file inside the container.
-	echo "Get the name of a running pod"
-	@RUNNING_POD=$$(kubectl get pods -n myapp-dev -l app=myapp -o jsonpath='{.items[0].metadata.name}'); \
+.PHONY : k8s-verify-configmap-valume-mounted
+k8s-verify-configmap-valume-mounted: ## Verify that app.ini from the ConfigMap is mounted as a file inside the container.
+	@echo "Get the name of a running pod"
+	@RUNNING_POD=$$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=$(APP_NAME) -o jsonpath='{.items[0].metadata.name}'); \
 	echo "List files in the mounted directory"; \
-	kubectl exec $$RUNNING_POD -n myapp-dev -n myapp-dev -- ls -la /etc/myapp/"
+	kubectl exec $$RUNNING_POD -n $(K8S_APP_NAMESPACE_DEV) -- ls -la /etc/myapp/ ; \
+	echo "Read the mounted config file"; \
+	kubectl exec $$RUNNING_POD -n $(K8S_APP_NAMESPACE_DEV) -- cat /etc/myapp/app.ini
 
+# --------------------------------------------------------------------------------------------------------
+#	Exercise 4 — Scale the Deployment
+#
+#		Task: 1. Scale myapp to 4 replicas and verify all are Running and Ready.
+#			  2. Then scale back to 2
+#   In production: You never use kubectl scale directly — you update the replicas 
+#				   field in your Git manifest and let ArgoCD apply it. This exercise 
+#                  is to understand the mechanics.
+#   Hint (scale deployment, --replicas=4)
+# --------------------------------------------------------------------------------------------------------
+.PHONY : k8s-scale-up-replicas
+k8s-scale-up-replicas: ## Scale myapp to 4 replicas. Check all are running
+	@echo "Scale the Deployment, Scale $(APP_NAME) to 4 replicas"
+	kubectl scale deployment $(APP_NAME) --replicas=4 -n $(K8S_APP_NAMESPACE_DEV)
 
+	@echo "Watch scaling up"
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=$(APP_NAME) -w
 
+.PHONY : k8s-verify-scale-up-deployment
+k8s-verify-scale-up-deployment: ## Verify all are Ready.
+	@echo "Verify Scale of the Deployment"
+	@echo "Expected: READY 4/4"
+	kubectl get deployment $(APP_NAME) -n $(K8S_APP_NAMESPACE_DEV)
+
+.PHONY : k8s-scale-down-replicas
+k8s-scale-down-replicas: ## Scale down myapp to 2 replicas and verify all are Running and Ready.
+	@echo "Then scale back to 2:"
+	kubectl scale deployment $(APP_NAME) --replicas=2 -n $(K8S_APP_NAMESPACE_DEV)
+
+	@echo "Observe graceful termination"
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=$(APP_NAME) -w
+
+# --------------------------------------------------------------------------------------------------------
+#	Exercise 5 — Decode a Secret
+#
+#		Task: Decode the DATABASE_URL secret and display the plain text value.
+#
+#		Expected output: 
+#			postgresql://myapp:myapp-dev-db-password@postgres:5432/myapp_dev
+#		
+#		Note: In a real production audit: You would RBAC-restrict who can get secrets. 
+#			  You would also run your cluster with encryption at rest for etcd so the 
+#			  base64 values in etcd are encrypted by a KMS key.
+#  Hint (secret, -o jsonpath, base64 --decode)
+# --------------------------------------------------------------------------------------------------------
+.PHONY : k8s-decode-secret
+k8s-decode-secret: # Decode the DATABASE_URL secret and display the plain text value.
+	@echo "Get the Database url from secret and base64 decode it"
+	kubectl get secret $(K8S_APP_SECRETS) -n $(K8S_APP_NAMESPACE_DEV) \
+	-o jsonpath='{.data.DATABASE_URL}' | base64 --decode
+
+# --------------------------------------------------------------------------------------------------------
+#	Exercise 6 — Patch a Deployment Without Editing the File
+#
+#		Task: Update the APP_LOG_LEVEL in the ConfigMap to 
+#			  debug and observe the change available in the 
+#			  running container.
+#
+#		Lesson: 
+#			1. Environment variables from ConfigMaps are injected at pod start time. 
+#			   Changing the ConfigMap does NOT automatically update running pods. 
+#			2.  Volume-mounted ConfigMaps update automatically (with a ~1 minute delay). 
+#				This is a source of confusion in production — operators change a ConfigMap, 
+#			    don't see the app change, and wonder why. 
+#				The fix: always do a rollout restart after a ConfigMap change, or use the 
+#                        checksum annotation pattern.
+#	Hint (patch configmap, --type, get configmap, exec  --env, rollout restart, rollout status  )
+# --------------------------------------------------------------------------------------------------------
+.PHONY : k8s-patch-deployment-by-edit-configmap
+k8s-patch-deployment-by-edit-configmap: ## Update the APP_LOG_LEVEL in the ConfigMap to debug and observe the change available in the running container.
+	@echo "Update the ConfigMap"
+	kubectl patch configmap $(K8S_APP_CONFIGMAPS) -n $(K8S_APP_NAMESPACE_DEV) \
+		--type merge \
+		-p '{"data":{"APP_LOG_LEVEL":"debug"}}'
+
+	@echo "Verify the ConfigMap changed"
+	kubectl get configmap $(K8S_APP_CONFIGMAPS) -n $(K8S_APP_NAMESPACE_DEV) -o jsonpath='{.data.APP_LOG_LEVEL}'
+	# Output: debug
+
+	@echo "The running pods still have the OLD value — ConfigMap env var changes require a pod restart to take effect."
+	@RUNNING_POD=$$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -o jsonpath='{.items[0].metadata.name}'); \
+	kubectl exec $$RUNNING_POD -n $(K8S_APP_NAMESPACE_DEV) -- env | grep APP_LOG_LEVEL
+	# Output: info  (still the old value)
+
+	@echo "Restart the deployment to pick up the new ConfigMap value"
+	kubectl rollout restart deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
+
+	@echo "Wait for rollout"
+	kubectl rollout status deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
+
+	@echo "Now check the new pod"
+	@NEW_POD=$$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=$(APP_NAME) -o jsonpath='{.items[0].metadata.name}'); \
+	kubectl exec $$NEW_POD -n $(K8S_APP_NAMESPACE_DEV) -- env | grep APP_LOG_LEVEL
+	# Output: debug
+
+# --------------------------------------------------------------------------------------------------------
+#	Exercise 7 — Write a Debugging Playbook Entry
+#
+#		Task: Document the systematic approach for diagnosing a pod 
+#             that is Running but returning HTTP 500 errors.
+#
+ #	Hint (get endpoints,logs, get pods, get events --sort-by=.lastTimestamp, exec -it, exec env,  )
+# --------------------------------------------------------------------------------------------------------
+.PHONY : k8s-display-debug-steps-for-pod
+k8s-display-debug-steps-for-pod:
+	@echo "Symptom: Pod status is Running/Ready but application returns HTTP 500"
+
+	@echo "Resolution path: \
+		→ Application bug → fix code, rebuild image, roll out \
+		→ Config error → fix ConfigMap/Secret, rollout restart \
+		→ Dependency down → check upstream service, fix networking \
+		→ Resource pressure → increase limits or scale replicas"
+
+	@echo "Step 1 — Confirm the pod is actually serving traffic"
+	@echo " → Verify pod IP appears in endpoints. If not, readiness probe is failing."
+	kubectl get endpoints $(APP_NAME) -n $(K8S_APP_NAMESPACE_DEV)
+  	
+	@echo "Step 2 — Check recent logs"
+	@echo "→ Look for exception tracebacks, database connection errors, missing config"	
+	@RUNNING_POD=$$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -o jsonpath='{.items[0].metadata.name}'); \
+	kubectl logs $$RUNNING_POD -n $(K8S_APP_NAMESPACE_DEV) --tail=100
+
+	@echo "Step 3 — Check events for recent anomalies"
+	@echo "→ Look for Liveness probe warnings, container restarts"	
+	kubectl get events -n $(K8S_APP_NAMESPACE_DEV) --sort-by=.lastTimestamp | tail -20
+
+	@echo "Step 4 — Exec into the container and test locally"
+	@echo "→ wget -qO- http://localhost:8000/problematic-endpoint"
+	@echo "→ Check if the error reproduces from inside the container"	
+	@RUNNING_POD=$$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -o jsonpath='{.items[0].metadata.name}'); \
+	# Uncomment below
+	#kubectl exec -it $$RUNNING_POD -n $(K8S_APP_NAMESPACE_DEV) -- sh
+
+	@echo "Step 5 — Check ConfigMap and Secret values"
+	@echo "→ Verify all expected variables are present with correct values"
+	@echo "→ Especially check DB connection strings, API keys"	
+	@RUNNING_POD=$$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -o jsonpath='{.items[0].metadata.name}'); \
+	kubectl exec $$RUNNING_POD -n $(K8S_APP_NAMESPACE_DEV) -- env
+
+	@echo "Step 6 — Check resource pressure"
+	@echo "→ CPU throttling causes slow responses, not 500s"
+	@echo "→ Memory near limit can cause erratic behavior before OOMKill"
+	@RUNNING_POD1=$$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -o jsonpath='{.items[0].metadata.name}'); \
+	kubectl top pod $$RUNNING_POD1 -n $(K8S_APP_NAMESPACE_DEV)
+
+	@echo "Step 7 — Check upstream dependencies"
+	@echo "→ NetworkPolicy may be blocking upstream connections"
+	@echo "→ DNS resolution may be failing"
+	@RUNNING_POD2=$$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -o jsonpath='{.items[0].metadata.name}'); \
+	kubectl exec $$RUNNING_POD2 -n $(K8S_APP_NAMESPACE_DEV) -- wget -qO- http://database-service:5432

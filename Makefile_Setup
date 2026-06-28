@@ -57,6 +57,18 @@ start-minikube: ## Start minikube explicitly.
         --kubernetes-version=$(MINIKUBE_K8S_VERSION)
 	@minikube update-context -p $(MINIKUBE_PROFILE)
 
+	@echo "What just happened: minikube created a single-node Kubernetes \
+	cluster running inside a Docker container in your WSL2 environment. \
+	That node runs both the control plane (API server, scheduler, etcd, controller manager)\
+	and will host your workloads."
+
+.PHONY : stop-minikube
+stop-minikube: ## Stop minikube safely.
+	# Use this when you want to pause the cluster and free local resources.
+	# This keeps the profile and data, but stops the running cluster.
+	# Expected output: cluster stop confirmation.
+	@minikube stop -p $(MINIKUBE_PROFILE) || true
+
 # Use this before kubectl or app deployment targets.
 # It checks whether the apiserver is Running, and starts minikube only if needed.
 # This avoids restarting an already working cluster.
@@ -86,3 +98,14 @@ check-clusterinfo: ## Verify the cluster is running
 .PHONY: kubectl-get-nodes
 kubectl-get-nodes: ensure-minikube ## List Kubernetes nodes.
 	@kubectl get nodes
+
+.PHONY : enable-minikube-addons
+enable-minikube-addons: ## enable ingress and metrics-server
+	@echo "Enable the ingress addon"
+	minikube addons enable ingress --profile=$(MINIKUBE_PROFILE)
+
+	@echo "Enable metrics-server — needed for kubectl top"
+	minikube addons enable metrics-server --profile=$(MINIKUBE_PROFILE)
+
+	@echo "Verify addons"
+	minikube addons list --profile=k$(MINIKUBE_PROFILE) | grep -E "ingress|metrics"

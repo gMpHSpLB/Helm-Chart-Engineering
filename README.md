@@ -24,3 +24,47 @@ Key skills demonstrated:
   - Helmfile for declarative multi-environment orchestration
   - Chart unit testing with assertions on rendered templates
 
+The critical Helm mental model:
+values.yaml (defaults)
+      +
+values-dev.yaml (overrides)          ← helm install -f values-dev.yaml
+      +
+--set key=value (CLI overrides)      ← highest priority, avoid in             
+                                                      production
+      │
+      ▼
+helm template engine renders all .yaml files in templates/
+      │
+      ▼
+kubectl apply sends rendered YAML to API server
+      │
+      ▼
+Release stored as Secret in namespace (helm history shows this)
+Priority order (highest wins): --set > -f override.yaml > values.yaml
+
+Chart Architecture: What a Production Chart Looks Like
+charts/myapp/
+├── Chart.yaml              ← chart metadata: name, version, appVersion, dependencies
+├── values.yaml             ← default values (safe for dev, not production)
+├── values-dev.yaml         ← dev environment overrides
+├── values-staging.yaml     ← staging overrides
+├── values-prod.yaml        ← production overrides (strictest settings)
+├── .helmignore             ← files to exclude from packaged chart (like .gitignore)
+├── NOTES.txt               ← printed to terminal after install/upgrade
+├── README.md               ← chart documentation
+├── templates/
+│   ├── _helpers.tpl        ← named templates (functions reused across templates)
+│   ├── namespace.yaml      ← (optional) namespace definition
+│   ├── configmap.yaml
+│   ├── secret.yaml         ← in prod: ExternalSecret, not Secret
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── ingress.yaml
+│   ├── hpa.yaml            ← HorizontalPodAutoscaler
+│   ├── pdb.yaml            ← PodDisruptionBudget
+│   ├── serviceaccount.yaml
+│   ├── networkpolicy.yaml
+│   └── NOTES.txt
+└── tests/
+    ├── deployment_test.yaml    ← helm unittest tests
+    └── service_test.yaml

@@ -77,6 +77,8 @@ K8S_SERVICES_DIR                ?= manifests/services
 # myapp Helm chart and env values
 K8S_APP_HELM_CHART_DIR			?= charts/myapp
 K8S_APP_DEV_VALUES_FILE			?= charts/myapp/values-dev.yaml
+K8S_APP_STAGING_VALUES_FILE		?= charts/myapp/values-staging.yaml
+K8S_APP_PROD_VALUES_FILE		?= charts/myapp/values-prod.yaml
 
 # ---------- HELM RELEASE NAMES PER ENV ----------
 # Keep releases separate so dev/staging/prod can be managed independently.
@@ -219,6 +221,11 @@ k8s-helm-serverside-install-all-templates-for-dev: ## Server-side — validates 
   	--wait \
   	--timeout 5m
 
+# Server-side uuninstall — validates against real API schema
+.PHONY : k8s-helm-serverside-uninstall-all-templates-for-dev
+k8s-helm-serverside-uninstall-all-templates-for-dev: ## Fresh Helm start, Uninstall helm release all templates for dev
+	helm uninstall m$(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
+
 .PHONY : k8s-verify-installed-helm-release-for-dev
 k8s-verify-installed-helm-release-for-dev: ## Verify Installed Helm Release for dev
 	@echo "Verify Installed Helm Release for dev"
@@ -235,6 +242,7 @@ k8s-check-rendered-values-by-helm: ## Check the rendered values (what actually w
 .PHONY : k8s-check-all-rendered-values-by-helm
 k8s-check-all-rendered-values-by-helm: ## Check the all values including defaults	
 	helm get values $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV) --all
+
 
 # -------------------------------------------------------------------------------------------------------
 #								  Helm Upgrade
@@ -334,6 +342,8 @@ k8s-install-helm-unittest-plugin: ## Install the helm-unittest Plugin and Verify
 .PHONY : k8s-run-all-unit-tests
 k8s-run-all-unit-tests: ## Run all unit tests
 	@echo "Run all unint tests"
+	# ---------------------------------------------------------------------------------
+	#
 	# Expected output:
 	# ### Chart [ myapp ] charts/myapp
 	#
@@ -343,5 +353,202 @@ k8s-run-all-unit-tests: ## Run all unit tests
 	# Charts:      1 passed, 1 total
 	# Test Suites: 2 passed, 2 total
 	# Tests:       15 passed, 15 total
+	# 
+	# ----------------------------------------------------------------------------------
 	helm unittest $(K8S_APP_HELM_CHART_DIR)
 
+# --------------------------------------------------------------------------------------
+#				 Debugging Exercises: Four Real Helm Failure Scenarios
+# --------------------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------------------
+# Debugging Exercise 1 — Template Rendering Error
+# Scenario: You edit deployment.yaml and accidentally introduce a syntax error.
+# ---------------------------------------------------------------------------------------
+.PHONY : k8s-introduce-error-in-yaml-file
+k8s-introduce-error-in-yaml-file: ## Introduce a deliberate error in Deployment.yaml
+	@echo "Introduce a deliberate error in Deployment.yaml"
+	@sed -i 's/{{- toYaml .Values.resources | nindent 12 }}/{{- required "resourcez must be set" .Values.resourcez | toYaml | nindent 12 }}/' \
+		$(K8S_APP_HELM_CHART_DIR)/templates/deployment.yaml 
+
+.PHONY : k8s-debug-template-rendering-error
+k8s-debug-template-rendering-error: ## Debugging Template Rendering Error
+	@echo "Try to render"
+	@echo "Expected Error Output:"
+	@echo "Error: execution error at (myapp/templates/deployment.yaml:71:16): resourcez must be set"
+	helm template $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+		 -f $(K8S_APP_HELM_CHART_DIR)/values-dev.yaml
+
+.PHONY : k8s-fix-error-in-yaml-file
+k8s-fix-error-in-yaml-file: ## Fix the issue- update the deployement.yaml
+	@echo "Fix the issue- update the deployement.yaml"
+	sed -i 's/{{- required "resourcez must be set" .Values.resourcez | toYaml | nindent 12 }}/{{- toYaml .Values.resources | nindent 12 }}/' \
+		$(K8S_APP_HELM_CHART_DIR)/templates/deployment.yaml
+
+.PHONY : k8s-verify-error-is-fixed
+k8s-verify-error-is-fixed: ## helm lint the yaml file to check error
+	@echo "helm lint the yaml file to check error"
+	helm lint $(K8S_APP_HELM_CHART_DIR) -f $(K8S_APP_HELM_CHART_DIR)/values-dev.yaml
+
+# -------------------------------------------------------------------------------------------------------
+# Debugging Exercise 2 — Values Override Not Taking Effect
+#
+# Scenario: You set replicaCount: 3 in values-prod.yaml but 
+#           the deployment keeps running with 1 replica.
+#
+# Lesson: In CI pipelines, --set flags are commonly used to 
+#         inject the image tag. If someone adds --set replicaCount=1 
+#         for a debugging session and it gets committed to the pipeline 
+#         script, it silently overrides your prod values for every deployment. 
+#         Always run helm get values after a suspicious deployment to see what 
+#         values actually went in.
+# --------------------------------------------------------------------------------------------------------
+
+# Step 1: Install with prod values
+.PHONY : k8s-upgrade-helmrelease-using-prod-values
+k8s-upgrade-helmrelease-using-prod-values: ## Install with prod values
+	helm upgrade $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	-f $(K8S_APP_PROD_VALUES_FILE) \
+	-n $(K8S_APP_NAMESPACE_DEV)
+
+# Step 2: Check replicas count after helm upgrade using prod values
+.PHONY : k8s-check-replicas-count-after-helm-upgrade-using-prod-values
+k8s-check-replicas-count-after-helm-upgrade-using-prod-values: ## Check replicas count after helm upgrade using prod values
+	@echo "Check replicas count after helm upgrade using prod values"
+	@echo "Expected output:, it shows 3"
+	kubectl get deployment -n $(K8S_APP_NAMESPACE_DEV)
+
+#Step 3: Override replicas count. This --set overrides the prod values file
+.PHONY : k8s-overrides-replics-count-using-set-in-cli
+k8s-overrides-replics-count-using-set-in-cli: ## Override replicas count. This --set overrides the prod values file
+	helm upgrade $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_PROD_VALUES_FILE) \
+	--set replicaCount=1 \
+	-n $(K8S_APP_NAMESPACE_DEV)
+
+# Step 4: Check replicas count after override using --set in CLI
+.PHONY : k8s-check-replicas-count-after-override-using-set-in-cli
+k8s-check-replicas-count-after-override-using-set-in-cli: ## Check replicas count after override using --set in CLI
+	@echo "Check replicas count after override using --set in CLI"
+	@echo "Expected output:, it shows 1"
+	kubectl get deployment -n $(K8S_APP_NAMESPACE_DEV)
+
+#Step 5: Diagnose — always check what values are actually in the release:
+.PHONY : k8s-check-values-in-helm-release
+k8s-check-values-in-helm-release: ## check what values are actually in the release
+	@echo "Check what values are actually in the release"
+	@echo "Expected Output: replicaCount: 1; This proves --set overrode the file value"
+	helm get values $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
+ 
+	@echo "Check what values are actually in the release"	
+	helm get values $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV) \
+	--all | grep replica
+
+#Step 6: Fix: rollback to previous revision
+.PHONY : k8s-to-fix-replicas-count-rollback-to-previous-revision
+k8s-to-fix-replicas-count-rollback-to-previous-revision: ## To Fix: rollback to previous revision
+	@echo "Rollback to previous revision"
+	@echo "Note: Rollback does not just reset replicas; it \
+	reapplies a previous rendered manifest to the live object. \
+	If any previous revision or the current live object still contains \
+	a field owned by Kubernetes itself, the patch can fail with a conflict"
+
+	@echo "you can remove the annotation from the live Deployment with kubectl \
+			annotate using the trailing - syntax."
+
+	@echo "Remove the annotation from the Deployment object itself"
+	kubectl annotate deployment $(K8S_MYAPP_RELEASE_DEV) \
+  		deployment.kubernetes.io/revision- \
+  		-n $(K8S_APP_NAMESPACE_DEV)
+
+	# Note: Check pod template
+	# kubectl get deployment myapp-dev-myapp -n myapp-dev \
+  	#	-o jsonpath='{.spec.template.metadata.annotations}{"\n"}'
+    # If the annotation is present, you’ll see deployment.kubernetes.io/revision in the output.
+
+	@echo "If the pod template annotation exists, remove it with a JSON patch"
+	kubectl patch deployment $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV) \
+  --type=json \
+  -p='[{"op":"remove","path":"/spec/template/metadata/annotations"}]'
+
+	helm rollback $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
+
+	@echo "Now, check what values are actually in the release"
+	helm get values $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV) | grep replica
+
+# ----------------------------------------------------------------------------------------------------
+# Debugging Exercise 3 — Chart Upgrade Fails, Release Left in FAILED State
+# Scenario: An upgrade fails mid-way (e.g., the new image has a bad probe path). 
+#           The release is now in FAILED state and subsequent upgrades fail immediately.
+#   Hint( helm history, helm list, helm upgrade, helm rollback, )
+# -----------------------------------------------------------------------------------------------------
+# Step 1. Simulate a bad upgrade — probe path that returns 404
+.PHONY : k8s-simulate-bad-helm-upgrade
+k8s-simulate-bad-helm-upgrade: ## Simulate a bad upgrade — probe path that returns 404
+	@echo "Simulate a bad upgrade — probe path that returns 404"
+	@echo "This times out after 60s because pods never become Ready"
+	helm upgrade $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--set probes.readiness.path=/this-path-does-not-exist \
+	--set probes.liveness.path=/this-path-does-not-exist \
+	--wait \
+	--timeout 60s \
+	-n $(K8S_APP_NAMESPACE_DEV)
+
+# Step 1.1 : Check Helm release is in failed state.
+.PHONY : k8s-confirm-bad-helm-upgrade-failed
+k8s-confirm-bad-helm-upgrade-failed: ## Check Helm release is in failed state.
+	@echo "Release is now in FAILED state"
+	@echo "See it: STATUS: failed"
+	helm list -n $(K8S_APP_NAMESPACE_DEV)
+
+# Step 2. Try to upgrade again with valid paramters
+.PHONY : k8s-subsequent-upgrad-with-valid-values
+k8s-subsequent-upgrad-with-valid-values: ## Try to upgrade again with valid paramters
+	@echo "Try to upgrade again:"
+	@echo "It will give Error: UPGRADE FAILED: another operation (install/upgrade/rollback) is in progress"	
+	helm upgrade $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+		-f $(K8S_APP_DEV_VALUES_FILE) \
+		-n $(K8S_APP_NAMESPACE_DEV)
+
+# Step 3. Diagnose the upgrade fail issue 
+.PHONY : k8s-diagnose-upgrade-fail-problem
+k8s-diagnose-upgrade-fail-problem: ## Diagnose the upgrade fail issue	
+	@echo "Diagnose:"
+	@echo "Check what happened - History check"
+	helm history $(K8S_MYAPP_RELEASE_DEV) \
+		-n $(K8S_APP_NAMESPACE_DEV)
+
+	@echo "== Check the pods =="
+	@echo "The old pods are still running (maxUnavailable:0 protected them)"
+	@echo "But the new pod is stuck in 0/1 READY"
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) \
+		-l app.kubernetes.io/instance=$(K8S_MYAPP_RELEASE_DEV)
+
+# Step 4. Fix the problem
+.PHONY : k8s-fix-upgrade-fail-problem
+k8s-fix-upgrade-fail-problem: ## Fix the problem
+	@echo "Fix:"
+	@echo "Roll back to last good revision"
+	helm rollback $(K8S_MYAPP_RELEASE_DEV) \
+		-n $(K8S_APP_NAMESPACE_DEV) --wait
+
+# Step 5: Verify release is healthy again
+.PHONY : k8s-verify-now-helm-release-is-healthy
+k8s-verify-now-helm-release-is-healthy: ## Verify release is healthy again
+	@echo "== Verify release is healthy again =="
+	@echo "STATUS: deployed"
+	helm list -n $(K8S_APP_NAMESPACE_DEV)
+
+.PHONY : k8s-atomic-helm-upgrade-prevention-approach
+k8s-atomic-helm-upgrade-prevention-approach: ## Use --atomic, automatically rolls back if the upgrade fails, so the release never gets stuck in FAILED state:
+	@echo "Enterprise prevention: Use --atomic in CI pipelines. \
+		--atomic automatically rolls back if the upgrade fails, \
+		so the release never gets stuck in FAILED state:"
+
+	helm upgrade $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--atomic \
+	--timeout 5m \
+	-n $(K8S_APP_NAMESPACE_DEV)

@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "myapp.labels" . | nindent 4 }}
   annotations:
-    deployment.kubernetes.io/revision: "1"
+    #deployment.kubernetes.io/revision: "1"
     app.kubernetes.io/environment: {{ .Values.environment | quote }}
 
 spec:
@@ -26,13 +26,13 @@ spec:
       labels:
         {{- include "myapp.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 6 }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
         checksum/config: {{ include "myapp.configmapChecksum" . }}
         checksum/secret: {{ include "myapp.secretChecksum" . }}
         {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 6 }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
 
     spec:

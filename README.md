@@ -72,8 +72,12 @@ Chart Architecture: What a Production Chart Looks Like:
         └── service_test.yaml
 
 The Complete Helm Workflow Diagram
+
 The Helm architecture diagram :
 
 <img width="2720" height="3440" alt="t02_helm_architecture" src="https://github.com/user-attachments/assets/c5efe193-d84c-440e-b709-005528ad6831" />
 
+Helm-Based Deployment Workflow Diagram:
+
+<img width="2720" height="3600" alt="helm_deployment_workflow" src="https://github.com/user-attachments/assets/95c87823-14d5-431b-9013-b702307170cf" />
 

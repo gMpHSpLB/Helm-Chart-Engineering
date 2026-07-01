@@ -70,3 +70,10 @@ Chart Architecture: What a Production Chart Looks Like:
     └── tests/
         ├── deployment_test.yaml    ← helm unittest tests
         └── service_test.yaml
+
+The Complete Helm Workflow Diagram
+The Helm architecture diagram 
+
+<img width="2720" height="3440" alt="t02_helm_architecture" src="https://github.com/user-attachments/assets/c5efe193-d84c-440e-b709-005528ad6831" />
+
+

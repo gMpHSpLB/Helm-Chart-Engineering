@@ -1,9 +1,9 @@
-Project: Production Helm Chart Engineering
+# Project: Production Helm Chart Engineering
 
-Chart: myapp — multi-environment Helm chart with full values schema
+## Chart: myapp — multi-environment Helm chart with full values schema
 
-What I built:
-  - A production-grade Helm chart with 8 templates, complete values schema,
+### What I built:
+**- A production-grade Helm chart with 8 templates, complete values schema,
     three environment override files (dev/staging/prod), and a NOTES.txt
     that gives operators the commands they need immediately after install
   - Implemented the checksum annotation pattern to automate pod restarts
@@ -14,18 +14,18 @@ What I built:
     resource limits, HPA interaction, and secret injection paths
   - Diagnosed and documented four production Helm failure scenarios:
     template rendering errors, silent values merge bugs, FAILED release recovery,
-    and values priority override issues
+    and values priority override issues**
 
-Key skills demonstrated:
-  - Go template mechanics: range, with, if/else, include, sha256sum, b64enc
+### Key skills demonstrated:
+**- Go template mechanics: range, with, if/else, include, sha256sum, b64enc
   - Helm values hierarchy and the map-replacement trap
   - Release management: history, rollback, --atomic for CI safety
   - helm-diff for pre-change visibility in production operations
   - Helmfile for declarative multi-environment orchestration
-  - Chart unit testing with assertions on rendered templates
+  - Chart unit testing with assertions on rendered templates**
 
-The critical Helm mental model:
-    
+## The critical Helm mental model:
+  **  
     values.yaml (defaults)
           +
     values-dev.yaml (overrides)          ← helm install -f values-dev.yaml
@@ -41,10 +41,11 @@ The critical Helm mental model:
           │
           ▼
     Release stored as Secret in namespace (helm history shows this)
-    Priority order (highest wins): --set > -f override.yaml > values.yaml
+    Priority order (highest wins): --set > -f override.yaml > values.yaml**
 
-Chart Architecture: What a Production Chart Looks Like:
+## Chart Architecture: What a Production Chart Looks Like:
 
+  ```console
     charts/myapp/
     ├── Chart.yaml              ← chart metadata: name, version, appVersion, dependencies
     ├── values.yaml             ← default values (safe for dev, not production)
@@ -70,14 +71,15 @@ Chart Architecture: What a Production Chart Looks Like:
     └── tests/
         ├── deployment_test.yaml    ← helm unittest tests
         └── service_test.yaml
+  ```
 
-The Complete Helm Workflow Diagram
+# The Complete Helm Workflow Diagram
 
-The Helm architecture diagram :
+## The Helm architecture diagram :
 
 <img width="2720" height="3440" alt="t02_helm_architecture" src="https://github.com/user-attachments/assets/c5efe193-d84c-440e-b709-005528ad6831" />
 
-Helm-Based Deployment Workflow Diagram:
+## Helm-Based Deployment Workflow Diagram:
 
 <img width="2720" height="3600" alt="helm_deployment_workflow" src="https://github.com/user-attachments/assets/95c87823-14d5-431b-9013-b702307170cf" />
 

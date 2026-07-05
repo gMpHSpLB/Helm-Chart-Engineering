@@ -3,7 +3,8 @@
 ## Chart: myapp — multi-environment Helm chart with full values schema
 
 ### What I built:
-**- A production-grade Helm chart with 8 templates, complete values schema,
+```console
+  - A production-grade Helm chart with 8 templates, complete values schema,
     three environment override files (dev/staging/prod), and a NOTES.txt
     that gives operators the commands they need immediately after install
   - Implemented the checksum annotation pattern to automate pod restarts
@@ -14,18 +15,19 @@
     resource limits, HPA interaction, and secret injection paths
   - Diagnosed and documented four production Helm failure scenarios:
     template rendering errors, silent values merge bugs, FAILED release recovery,
-    and values priority override issues**
-
+    and values priority override issues
+  ```
 ### Key skills demonstrated:
-**- Go template mechanics: range, with, if/else, include, sha256sum, b64enc
+```console
+  - Go template mechanics: range, with, if/else, include, sha256sum, b64enc
   - Helm values hierarchy and the map-replacement trap
   - Release management: history, rollback, --atomic for CI safety
   - helm-diff for pre-change visibility in production operations
   - Helmfile for declarative multi-environment orchestration
-  - Chart unit testing with assertions on rendered templates**
-
+  - Chart unit testing with assertions on rendered templates
+  ```
 ## The critical Helm mental model:
-  **  
+```console
     values.yaml (defaults)
           +
     values-dev.yaml (overrides)          ← helm install -f values-dev.yaml
@@ -41,8 +43,8 @@
           │
           ▼
     Release stored as Secret in namespace (helm history shows this)
-    Priority order (highest wins): --set > -f override.yaml > values.yaml**
-
+    Priority order (highest wins): --set > -f override.yaml > values.yaml
+  ```
 ## Chart Architecture: What a Production Chart Looks Like:
 
   ```console

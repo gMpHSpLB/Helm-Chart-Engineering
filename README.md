@@ -85,3 +85,14 @@
 
 <img width="2720" height="3600" alt="helm_deployment_workflow" src="https://github.com/user-attachments/assets/95c87823-14d5-431b-9013-b702307170cf" />
 
+## How Resources Connect in Practice : In a Helm-only workflow
+```console
+Developer writes code
+  → CI builds image (sha256:abc) → pushed to registry
+  → CI runs helm upgrade --install
+     → values merge: values.yaml + values-prod.yaml + --set image.tag=sha256:abc
+     → Helm renders: Deployment (image=sha256:abc), ConfigMap, Secret, Service, Ingress, HPA, PDB
+     → Helm applies to API server → Kubernetes reconciles
+     → Helm stores Release Secret (revision 3)
+  → CI runs helm test → smoke test pod validates Service
+```
